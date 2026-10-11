@@ -1,0 +1,297 @@
+$blue: #1f3fd1;
+$brand-blue: #2f5fa8;
+$band: #6a76a8;
+$green: #a9cf5b;
+$grey-bar: #b7b7b7;
+$line: #444;
+
+.report-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 1rem;
+  background: #eef1f5;
+  font-family: Arial, Helvetica, sans-serif;
+
+  @media (max-width: 767px) {
+    padding: 0.5rem;
+  }
+}
+
+.report-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  width: 794px;
+  min-height: 1123px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  color: #111;
+  // Shrinks the sheet to the screen width on phones (set from ReportPage).
+  zoom: var(--sheet-scale, 1);
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+// ── Letterhead ────────────────────────────────────────────
+.lh {
+  position: relative;
+  height: 150px;
+  padding: 10px 22px 0 0;
+
+  .lh-swoosh {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 150px;
+  }
+
+  .lh-logo {
+    position: absolute;
+    top: 52px;
+    left: 92px;
+    width: 92px;
+  }
+
+  .lh-right {
+    margin-left: 230px;
+    text-align: right;
+  }
+
+  .lh-namebox {
+    border: 1.5px solid #222;
+    padding: 4px 12px 6px;
+    text-align: left;
+  }
+
+  .lh-name {
+    font-family: "Arial Black", Arial, sans-serif;
+    font-size: 27px;
+    font-weight: 900;
+    color: $blue;
+    text-decoration: underline;
+    letter-spacing: 0.5px;
+    line-height: 1.15;
+  }
+
+  .lh-tagline {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 15px;
+    color: #222;
+  }
+
+  .lh-address {
+    margin-top: 8px;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 11.5px;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .lh-contact {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: $blue;
+    text-decoration: underline;
+  }
+}
+
+// ── Body ──────────────────────────────────────────────────
+.report-body {
+  flex: 1;
+  padding: 4px 22px 10px;
+}
+
+// ── Footer band ───────────────────────────────────────────
+.report-footer {
+  padding: 0 22px 18px;
+
+  .rf-line {
+    height: 6px;
+    background: $green;
+  }
+
+  .rf-band {
+    background: $band;
+    color: #fff;
+    text-align: center;
+    font-size: 11.5px;
+    padding: 6px 0 7px;
+    line-height: 1.45;
+  }
+
+  .rf-strong {
+    font-weight: 700;
+    font-size: 13px;
+  }
+}
+
+// ── Tables ────────────────────────────────────────────────
+.rt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10.5px;
+  margin-top: -1px;
+
+  td {
+    border: 1px solid $line;
+    padding: 2px 5px;
+    vertical-align: top;
+    height: 19px;
+  }
+
+  .l {
+    font-weight: 700;
+  }
+
+  .c {
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  .h {
+    font-weight: 700;
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  .pre {
+    white-space: pre-wrap;
+  }
+
+  .tall {
+    height: 46px;
+  }
+
+  .xtall {
+    height: 64px;
+  }
+
+  .bar {
+    background: $grey-bar;
+    text-align: center;
+    font-weight: 700;
+  }
+
+  .green-bar {
+    background: #8ef29a;
+    text-align: center;
+  }
+
+  .chk {
+    white-space: nowrap;
+    font-size: 9.6px;
+
+    .cbl {
+      margin-right: 5px;
+    }
+  }
+
+  .checks-head {
+    text-align: center;
+    font-weight: 700;
+    text-decoration: underline;
+    background: #dbeaf7;
+  }
+}
+
+.rt-title {
+  .rt-title-name {
+    font-family: "Arial Black", Arial, sans-serif;
+    font-size: 17px;
+    text-align: center;
+    vertical-align: middle;
+    text-decoration: underline;
+    letter-spacing: 0.3px;
+  }
+
+  .rt-title-label {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 13px;
+    vertical-align: middle;
+  }
+
+  .rt-title-value {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    vertical-align: middle;
+  }
+}
+
+// Checkbox with tick
+.cbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 10px;
+  white-space: nowrap;
+}
+
+.cb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 11px;
+  height: 11px;
+  border: 1.2px solid #222;
+  flex-shrink: 0;
+
+  .cb-tick {
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1;
+  }
+}
+
+.sig-img {
+  display: block;
+  max-height: 46px;
+  max-width: 200px;
+}
+
+.sig-empty {
+  height: 30px;
+}
+
+// Dense forms (PM report) use tighter rows so they fit on one A4 page.
+.report-page.compact {
+  .lh {
+    height: 138px;
+  }
+
+  .rt td {
+    height: 17px;
+    padding: 1px 5px;
+  }
+
+  .rt .tall {
+    height: 34px;
+  }
+}
+
+// ── Print ─────────────────────────────────────────────────
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  .report-wrapper {
+    padding: 0;
+    background: #fff;
+    min-height: 0;
+  }
+
+  .report-page {
+    box-shadow: none;
+    min-height: 0;
+    overflow: visible;
+    // The sheet is drawn at 794px (A4 width at 96 dpi). Scale it a little so the
+    // whole report, footer included, fits one A4 page even with print margins.
+    zoom: 0.9;
+  }
+}
