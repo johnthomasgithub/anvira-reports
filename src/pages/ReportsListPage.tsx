@@ -16,7 +16,8 @@ import DatePicker from "@/components/DatePicker";
 import { FORMS, FORM_LIST, isFormType } from "@/forms/registry";
 import { CLIENT_OPTIONS } from "@/forms/clients";
 import { fmtDate } from "@/components/report/format";
-import { LAST_LIST_KEY, listReports, type FormType } from "@/lib/reports";
+import { LAST_LIST_KEY, type FormType } from "@/lib/reports";
+import { useApi, useSession } from "@/lib/auth";
 import { usePageTitle } from "@/components/shell/navigation";
 
 const TYPE_BADGE: Record<FormType, string> = {
@@ -25,7 +26,7 @@ const TYPE_BADGE: Record<FormType, string> = {
   commissioning: "bg-brand-green/15 text-brand-green-dark border-brand-green/40",
 };
 
-const FILTER_KEYS = ["client", "number", "type", "from", "to"] as const;
+const FILTER_KEYS = ["client", "number", "type", "from", "to", "tech"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];
 
 /** Debounces a text value so the list is not re-fetched on every keystroke. */
@@ -39,7 +40,10 @@ function useDebounced(value: string, ms = 300) {
 }
 
 const ReportsListPage = () => {
-  usePageTitle("Saved Reports");
+  const { employee } = useSession();
+  const api = useApi();
+  const isAdmin = employee.role === "admin";
+  usePageTitle(isAdmin ? "All Reports" : "My Reports");
   const isMobile = useIsMobile();
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -63,8 +67,9 @@ const ReportsListPage = () => {
   const number = useDebounced(get("number"));
   const dateFrom = get("from");
   const dateTo = get("to");
+  const ownerId = isAdmin ? get("tech") : "";
   const hasFilters = FILTER_KEYS.some((k) => params.get(k));
-  const extraFilterCount = [typeParam, dateFrom, dateTo].filter(Boolean).length;
+  const extraFilterCount = [typeParam, dateFrom, dateTo, ownerId].filter(Boolean).length;
 
   // Remember the current filters for the back button on a report.
   useEffect(() => {
@@ -72,12 +77,37 @@ const ReportsListPage = () => {
   }, [params]);
 
   const { data: reports = [], isLoading, error } = useQuery({
-    queryKey: ["reports", { client, number, formType, dateFrom, dateTo }],
-    queryFn: () => listReports({ client, number, formType, dateFrom, dateTo }),
+    queryKey: ["reports", employee.id, { client, number, formType, dateFrom, dateTo, ownerId }],
+    queryFn: () => api.listReports({ client, number, formType, dateFrom, dateTo, ownerId }),
+  });
+
+  const { data: employees = [] } = useQuery({
+    queryKey: ["employees"],
+    queryFn: () => api.listEmployees(),
+    enabled: isAdmin,
   });
 
   const extraFilters = (
     <>
+      {isAdmin && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Technician</Label>
+          <Select value={ownerId || "all"} onValueChange={(v) => set("tech", v === "all" ? "" : v)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All technicians</SelectItem>
+              {employees.map((e) => (
+                <SelectItem key={e.id} value={e.id}>
+                  {e.name}
+                  {e.role === "admin" ? " (Admin)" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="space-y-1.5">
         <Label className="text-xs">Report type</Label>
         <Select value={formType} onValueChange={(v) => set("type", v === "all" ? "" : v)}>
@@ -156,7 +186,7 @@ const ReportsListPage = () => {
               </div>
             </div>
 
-            {!isMobile && <div className="grid grid-cols-3 gap-3">{extraFilters}</div>}
+            {!isMobile && <div className={isAdmin ? "grid grid-cols-2 lg:grid-cols-4 gap-3" : "grid grid-cols-3 gap-3"}>{extraFilters}</div>}
 
             <div className="flex items-center gap-2 text-sm">
               {isMobile && (
@@ -212,6 +242,7 @@ const ReportsListPage = () => {
                     <div className="text-sm truncate mt-0.5">{r.client || "—"}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {r.report_date ? fmtDate(r.report_date) : "—"}
+                      {isAdmin && r.owner_name && <> · {r.owner_name}</>}
                       {r.report_no && <> · Report No. {r.report_no}</>}
                       {r.job_no && <> · Job No. {r.job_no}</>}
                     </div>
@@ -240,7 +271,7 @@ const ReportsListPage = () => {
                   setParams(
                     (prev) => {
                       const next = new URLSearchParams(prev);
-                      ["type", "from", "to"].forEach((k) => next.delete(k));
+                      ["type", "from", "to", "tech"].forEach((k) => next.delete(k));
                       return next;
                     },
                     { replace: true },

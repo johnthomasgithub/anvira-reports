@@ -152,7 +152,7 @@ const PmForm = () => (
     </Section>
 
     <Section title="Visit & Materials">
-      <TextField name="technicianName" label="Name of Technician" />
+      <TextField name="technicianName" label="Name of Technician" readOnly />
       <Group cols={2}>
         <DateField name="reportingTime" label="Technician Reporting Time" mode="time" />
         <DateField name="departureTime" label="Departure Time" mode="time" />

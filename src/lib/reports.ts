@@ -1,9 +1,30 @@
-import { supabase, SIGNATURE_BUCKET } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
+
+// All data goes through checked database functions (see supabase/schema.sql),
+// called with the session token from the PIN login. The database decides what
+// each employee may see: technicians their own reports, admins everyone's.
 
 export type FormType = "pm" | "breakdown" | "commissioning";
 export type FormData = Record<string, unknown>;
+export type Role = "technician" | "admin";
 
-export interface Report {
+export interface Employee {
+  id: string;
+  code: string | null;
+  name: string;
+  role: Role;
+}
+
+export interface Session {
+  token: string;
+  expiresAt: string; // ISO time
+  employee: Employee;
+}
+
+export type LoginResult = { ok: true; session: Session } | { ok: false; error: "INVALID_PIN" | "TOO_MANY_ATTEMPTS" };
+
+/** List row (no form data). */
+export interface ReportRow {
   id: string;
   form_type: FormType;
   form_no: string;
@@ -11,9 +32,15 @@ export interface Report {
   job_no: string | null;
   client: string | null;
   report_date: string | null;
-  data: FormData;
+  /** Null for reports saved before PIN login existed. */
+  owner_id: string | null;
+  owner_name: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Report extends ReportRow {
+  data: FormData;
 }
 
 export interface ReportSummary {
@@ -32,203 +59,176 @@ export interface ListFilter {
   /** yyyy-MM-dd, inclusive */
   dateFrom?: string;
   dateTo?: string;
+  /** Admins only: one technician's reports. */
+  ownerId?: string;
 }
 
 /** sessionStorage key holding the Saved Reports filters (URL query string). */
 export const LAST_LIST_KEY = "anvira-last-list-filters";
 
-const FORM_NO_PREFIX: Record<FormType, string> = {
-  pm: "ASPL/PM/",
-  breakdown: "ASPL/BDS/",
-  commissioning: "ASPL/CR/",
-};
+/** The session has ended (24 hours passed, or logged out elsewhere). */
+export class SessionExpiredError extends Error {
+  constructor() {
+    super("Session expired. Please enter your PIN again.");
+  }
+}
 
 const isDataUrl = (v: unknown): boolean => typeof v === "string" && v.startsWith("data:");
 
-// ── Signatures ─────────────────────────────────────────────────────────────
-// In the form, a signature is a PNG data URL. On save it is uploaded to the
-// private "signatures" bucket and the form data keeps only the file path.
-
-async function uploadSignatures(id: string, data: FormData, fields: string[]): Promise<FormData> {
-  if (!supabase) return data;
-  const out = { ...data };
-  for (const field of fields) {
-    const value = out[field];
-    if (typeof value !== "string" || !isDataUrl(value)) continue;
-    const blob = await (await fetch(value)).blob();
-    const path = `${id}/${field}-${Date.now()}.png`;
-    const { error } = await supabase.storage
-      .from(SIGNATURE_BUCKET)
-      .upload(path, blob, { contentType: "image/png", upsert: true });
-    if (error) throw new Error(`Could not upload signature: ${error.message}`);
-    out[field] = path;
-  }
-  return out;
-}
-
-/** Turns a stored signature value into something an <img> can show. */
+/**
+ * Signatures are stored inside the report (PNG data URLs), so they follow the
+ * same access rules as the report. Older reports may hold a link instead.
+ */
 export async function signatureSrc(value: unknown): Promise<string> {
   if (typeof value !== "string" || !value) return "";
-  if (isDataUrl(value) || value.startsWith("http")) return value;
-  if (!supabase) return "";
-  const { data, error } = await supabase.storage.from(SIGNATURE_BUCKET).createSignedUrl(value, 60 * 60);
-  if (error) return "";
-  return data.signedUrl;
+  return isDataUrl(value) || value.startsWith("http") ? value : "";
 }
 
-// ── Local fallback (no Supabase keys) ─────────────────────────────────────
+// ── Backend selection ─────────────────────────────────────────────────────
+// Without Supabase keys, development builds use an in-browser demo backend.
+// Production builds never include it (the import is removed at build time).
 
-const LOCAL_KEY = "anvira-reports";
-const LOCAL_COUNTER_KEY = "anvira-report-counters";
+type LocalBackend = typeof import("./localBackend");
 
-function readLocal(): Report[] {
+function localBackend(): Promise<LocalBackend> {
+  return import.meta.env.DEV
+    ? import("./localBackend")
+    : Promise.reject(new Error("The app is not connected to Supabase. Add the keys and redeploy."));
+}
+
+function toError(message: string): Error {
+  if (message.includes("SESSION_EXPIRED")) return new SessionExpiredError();
+  if (message.includes("NOT_FOUND")) return new Error("Not found, or you do not have access to it.");
+  if (message.includes("NOT_ALLOWED")) return new Error("Only an admin can do this.");
+  if (message.includes("Could not find the function")) {
+    return new Error("The database is not set up for PIN login yet. Run supabase/schema.sql in Supabase.");
+  }
+  return new Error(message);
+}
+
+/** Runs a demo-backend call with the same error handling as Supabase. */
+async function viaLocal<T>(fn: (backend: LocalBackend) => T): Promise<T> {
+  const backend = await localBackend();
   try {
-    return JSON.parse(localStorage.getItem(LOCAL_KEY) || "[]");
-  } catch {
-    return [];
+    return fn(backend);
+  } catch (err) {
+    throw toError(err instanceof Error ? err.message : String(err));
   }
 }
 
-function writeLocal(reports: Report[]) {
-  localStorage.setItem(LOCAL_KEY, JSON.stringify(reports));
+async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase!.rpc(fn, args);
+  if (error) throw toError(error.message);
+  return data as T;
 }
 
-function nextLocalFormNo(type: FormType): string {
-  let counters: Record<string, number> = {};
-  try {
-    counters = JSON.parse(localStorage.getItem(LOCAL_COUNTER_KEY) || "{}");
-  } catch {
-    counters = {};
+// ── Login ──────────────────────────────────────────────────────────────────
+
+interface LoginResponse {
+  ok: boolean;
+  error?: "INVALID_PIN" | "TOO_MANY_ATTEMPTS";
+  token?: string;
+  expires_at?: string;
+  employee?: Employee;
+}
+
+export async function login(pin: string): Promise<LoginResult> {
+  const res = supabase ? await rpc<LoginResponse>("login", { p_pin: pin }) : await viaLocal((b) => b.login(pin));
+  if (!res.ok || !res.token || !res.expires_at || !res.employee) {
+    return { ok: false, error: res.error ?? "INVALID_PIN" };
   }
-  counters[type] = (counters[type] ?? 0) + 1;
-  localStorage.setItem(LOCAL_COUNTER_KEY, JSON.stringify(counters));
-  return FORM_NO_PREFIX[type] + String(counters[type]).padStart(4, "0");
+  return { ok: true, session: { token: res.token, expiresAt: res.expires_at, employee: res.employee } };
 }
 
-function matches(r: Report, filter: ListFilter) {
-  const has = (value: string | null, q?: string) => !q?.trim() || !!value?.toLowerCase().includes(q.trim().toLowerCase());
-  if (filter.formType && filter.formType !== "all" && r.form_type !== filter.formType) return false;
-  if (!has(r.client, filter.client)) return false;
-  if (filter.number?.trim() && ![r.form_no, r.report_no, r.job_no].some((v) => has(v, filter.number))) return false;
-  if (filter.dateFrom && (!r.report_date || r.report_date < filter.dateFrom)) return false;
-  if (filter.dateTo && (!r.report_date || r.report_date > filter.dateTo)) return false;
-  return true;
+/** Confirms a stored session is still valid; returns it refreshed, or null. */
+export async function checkSession(session: Session): Promise<Session | null> {
+  try {
+    const res = supabase
+      ? await rpc<{ expires_at: string; employee: Employee }>("whoami", { p_token: session.token })
+      : await viaLocal((b) => b.whoami(session.token));
+    return { token: session.token, expiresAt: res.expires_at, employee: res.employee };
+  } catch (err) {
+    if (err instanceof SessionExpiredError) return null;
+    throw err;
+  }
 }
 
-// ── Public API ─────────────────────────────────────────────────────────────
+export async function logout(token: string): Promise<void> {
+  if (supabase) await rpc("logout", { p_token: token });
+  else await viaLocal((b) => b.logout(token));
+}
 
-const today = () => new Date().toISOString().slice(0, 10);
+// ── Reports ────────────────────────────────────────────────────────────────
 
-/** Searchable columns. The date falls back so every report can be found by date. */
-const toColumns = (summary: ReportSummary, fallbackDate: string) => ({
-  client: summary.client || null,
-  report_no: summary.reportNo || null,
-  job_no: summary.jobNo || null,
-  report_date: summary.reportDate || fallbackDate,
+/** Searchable columns; the database falls back to today when the date is empty. */
+const toArgs = (summary: ReportSummary) => ({
+  p_report_no: summary.reportNo,
+  p_job_no: summary.jobNo,
+  p_client: summary.client,
+  p_date: summary.reportDate || null,
 });
 
-/** Strips characters that have a meaning inside a PostgREST `or` filter. */
-const clean = (value?: string) => value?.trim().replace(/[%,()*]/g, " ").trim() ?? "";
-
-export async function listReports(filter: ListFilter = {}): Promise<Report[]> {
-  if (!supabase) {
-    return readLocal()
-      .filter((r) => matches(r, filter))
-      .sort((a, b) => (b.report_date ?? "").localeCompare(a.report_date ?? "") || b.created_at.localeCompare(a.created_at));
-  }
-
-  let query = supabase
-    .from("reports")
-    .select("*")
-    .order("report_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (filter.formType && filter.formType !== "all") query = query.eq("form_type", filter.formType);
-  const client = clean(filter.client);
-  if (client) query = query.ilike("client", `%${client}%`);
-  const number = clean(filter.number);
-  if (number) query = query.or(`form_no.ilike.%${number}%,report_no.ilike.%${number}%,job_no.ilike.%${number}%`);
-  if (filter.dateFrom) query = query.gte("report_date", filter.dateFrom);
-  if (filter.dateTo) query = query.lte("report_date", filter.dateTo);
-
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return data as Report[];
+export async function listReports(token: string, filter: ListFilter = {}): Promise<ReportRow[]> {
+  const args = {
+    p_token: token,
+    p_client: filter.client?.trim() || null,
+    p_number: filter.number?.trim() || null,
+    p_type: filter.formType && filter.formType !== "all" ? filter.formType : null,
+    p_from: filter.dateFrom || null,
+    p_to: filter.dateTo || null,
+    p_owner: filter.ownerId || null,
+  };
+  return supabase ? rpc("list_reports", args) : viaLocal((b) => b.listReports(args));
 }
 
-export async function getReport(id: string): Promise<Report> {
-  if (!supabase) {
-    const found = readLocal().find((r) => r.id === id);
-    if (!found) throw new Error("Report not found");
-    return found;
-  }
-  const { data, error } = await supabase.from("reports").select("*").eq("id", id).single();
-  if (error) throw new Error(error.message);
-  return data as Report;
+export async function getReport(token: string, id: string): Promise<Report> {
+  if (!supabase) return viaLocal((b) => b.getReport(token, id));
+  const rows = await rpc<Report[]>("get_report", { p_token: token, p_id: id });
+  if (!rows[0]) throw toError("NOT_FOUND");
+  return rows[0];
 }
 
 export async function createReport(
+  token: string,
   type: FormType,
   formData: FormData,
   summary: ReportSummary,
-  signatureFields: string[],
 ): Promise<Report> {
-  const id = crypto.randomUUID();
-
-  if (!supabase) {
-    const now = new Date().toISOString();
-    const report: Report = {
-      id,
-      form_type: type,
-      form_no: nextLocalFormNo(type),
-      ...toColumns(summary, today()),
-      data: formData,
-      created_at: now,
-      updated_at: now,
-    };
-    writeLocal([report, ...readLocal()]);
-    return report;
-  }
-
-  const data = await uploadSignatures(id, formData, signatureFields);
-  const { data: row, error } = await supabase
-    .from("reports")
-    .insert({ id, form_type: type, ...toColumns(summary, today()), data })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return row as Report;
+  const args = {
+    p_token: token,
+    p_type: type,
+    ...toArgs(summary),
+    p_data: JSON.parse(JSON.stringify(formData)),
+  };
+  if (!supabase) return viaLocal((b) => b.createReport(args));
+  const rows = await rpc<Report[]>("create_report", args);
+  return rows[0];
 }
 
 export async function updateReport(
+  token: string,
   id: string,
   formData: FormData,
   summary: ReportSummary,
-  signatureFields: string[],
 ): Promise<Report> {
-  if (!supabase) {
-    const reports = readLocal();
-    const index = reports.findIndex((r) => r.id === id);
-    if (index === -1) throw new Error("Report not found");
-    reports[index] = {
-      ...reports[index],
-      ...toColumns(summary, reports[index].created_at.slice(0, 10)),
-      data: formData,
-      updated_at: new Date().toISOString(),
-    };
-    writeLocal(reports);
-    return reports[index];
-  }
+  const args = {
+    p_token: token,
+    p_id: id,
+    ...toArgs(summary),
+    p_data: JSON.parse(JSON.stringify(formData)),
+  };
+  if (!supabase) return viaLocal((b) => b.updateReport(args));
+  const rows = await rpc<Report[]>("update_report", args);
+  return rows[0];
+}
 
-  const data = await uploadSignatures(id, formData, signatureFields);
-  const columns = toColumns(summary, "");
-  const { data: row, error } = await supabase
-    .from("reports")
-    // An empty date keeps whatever date the report already has.
-    .update({ ...columns, report_date: columns.report_date || undefined, data })
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return row as Report;
+/** Admins only: permanently deletes a report. */
+export async function deleteReport(token: string, id: string): Promise<void> {
+  if (supabase) await rpc("delete_report", { p_token: token, p_id: id });
+  else await viaLocal((b) => b.deleteReport(token, id));
+}
+
+/** Admins only. */
+export async function listEmployees(token: string): Promise<Employee[]> {
+  return supabase ? rpc("list_employees", { p_token: token }) : viaLocal((b) => b.listEmployees(token));
 }

@@ -10,7 +10,7 @@ Phone-friendly digital versions of the Anvira Solutions paper forms:
 
 Technicians fill a form on the phone and sign on screen, and the report is saved to the cloud (Supabase). Saved reports can be searched, opened, edited, printed or saved as a PDF that matches the paper layout, and shared on WhatsApp or by email.
 
-There is **no login**: anyone with the app link can use it, so share the link only with the team.
+Everyone logs in with a personal **4-digit PIN** (24 hours on that device). **Technicians** see and edit only their own reports and their name is filled in automatically. **Admins** see everyone's reports, can filter by technician, and are the only ones who can delete. These rules are enforced by the database (`supabase/schema.sql`), not just hidden in the app.
 
 Stack: Vite + React + TypeScript + Tailwind + shadcn/ui, Supabase (database and signature storage), hosted on Netlify.
 
@@ -30,7 +30,7 @@ cp .env.example .env   # optional: add Supabase keys (see below)
 npm run dev            # http://localhost:8080
 ```
 
-Without Supabase keys the app runs in **local mode**. Reports are saved in the browser only, and a yellow banner says so. This is useful for trying out forms before the Supabase project exists.
+Without Supabase keys, `npm run dev` runs a **local demo** (PINs 1001–1012 for technicians, 1099 for Anvira Admin). Reports are saved in the browser only. Production builds do not include the demo.
 
 ## Supabase setup (one time)
 
@@ -38,10 +38,10 @@ Without Supabase keys the app runs in **local mode**. Reports are saved in the b
 2. Open **SQL Editor → New query**, paste all of [`supabase/schema.sql`](supabase/schema.sql), and click **Run**. This creates:
    - the `reports` table (one row per form; all fields in a `data` JSON column),
    - automatic form numbers (`ASPL/PM/0001`, …),
-   - access rules (create, read and edit allowed; delete is not possible from the app),
-   - a private `signatures` storage bucket.
-3. Open **Project Settings → API** and copy the **Project URL** and the **anon public** key.
-4. Put them in `.env` for local use, and in Netlify for the live site (next section).
+   - employees, PIN login and sessions, and the locked-down access functions.
+3. In a new query, run the employee seed file **`anvira-employee-seed.sql`**. It is kept outside this repo because it contains the PINs.
+4. Open **Project Settings → API** and copy the **Project URL** and the **anon public** key.
+5. Put them in `.env` for local use, and in Netlify for the live site (next section).
 
 To continue numbering from the paper forms, run e.g. `select setval('form_no_pm_seq', 250);` and the next PM report becomes `ASPL/PM/0251`.
 
@@ -59,7 +59,7 @@ To continue numbering from the paper forms, run e.g. `select setval('form_no_pm_
 ## How data is stored
 
 - **`reports` table:** `form_type`, `form_no` (automatic), `report_no`, `job_no`, `client` and `report_date` are columns used for searching. Every form field is stored in `data` (JSON).
-- **Signatures:** on save, each signature is uploaded as a PNG to the private `signatures` bucket at `<report id>/<field>-<time>.png`. The JSON keeps only the file path. Signatures are shown through short-lived signed links.
+- **Signatures:** stored inside the report's `data`, so they follow the same access rules.
 - **PDFs:** never stored. The printable page is rebuilt from the data each time **Print / Save PDF** is pressed.
 - **Drafts:** a new form is autosaved on the phone (localStorage) until it is saved to the cloud, so nothing is lost if the page reloads or the network drops.
 
@@ -78,7 +78,6 @@ Filters are kept in the page address, so **Saved Reports** on an open report ret
 
 - **Excel/CSV:** Supabase → Table Editor → `reports` → Export.
 - **Full backup:** `pg_dump "<connection string from Supabase → Connect>" --schema=public -Fc -f anvira-backup.dump`
-- **Signatures:** Supabase → Storage → `signatures`. For a bulk copy, use the S3 connection (Storage → S3 Connection) with `aws s3 sync`.
 
 The free plan has no automatic backups, so export regularly.
 
@@ -105,3 +104,14 @@ supabase/schema.sql       database setup script
 ```
 
 **Adding a client:** edit `src/forms/clients.ts`. Clients not on the list can still be typed with "Other".
+
+## Managing employees and PINs (SQL Editor)
+
+```sql
+select add_employee('010013', 'NEW TECHNICIAN NAME', 'technician', '4827');  -- add
+select set_employee_pin('010005', '6194');                                -- change a PIN (by code or exact name)
+update employees set active = false where code = '010007';                -- block someone (reports are kept)
+update employees set role = 'admin' where code = '010004';                -- make someone admin
+```
+
+PINs must be 4 digits and unique. Changing a PIN logs that person out everywhere. Never commit a file containing PINs.

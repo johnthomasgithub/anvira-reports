@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Mail, Pencil, Printer, Share2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { FORMS } from "@/forms/registry";
 import { fmtDate } from "@/components/report/format";
-import { getReport, signatureSrc, type Report } from "@/lib/reports";
+import { signatureSrc, type Report } from "@/lib/reports";
+import { useApi, useSession } from "@/lib/auth";
+import DeleteReportButton from "@/components/DeleteReportButton";
 import { usePageTitle } from "@/components/shell/navigation";
 
 function shareText(report: Report) {
@@ -25,11 +28,14 @@ function shareText(report: Report) {
 const ReportViewPage = () => {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { data: report, isLoading, error } = useQuery({ queryKey: ["report", id], queryFn: () => getReport(id) });
+  const queryClient = useQueryClient();
+  const api = useApi();
+  const { employee } = useSession();
+  const { data: report, isLoading, error } = useQuery({ queryKey: ["report", id], queryFn: () => api.getReport(id) });
   const [signatures, setSignatures] = useState<Record<string, string>>({});
   usePageTitle(report?.form_no ?? "Report");
 
-  // Signatures are stored as private files; fetch short-lived links to show them.
+  // Signatures are stored inside the report.
   useEffect(() => {
     if (!report) return;
     const fields = FORMS[report.form_type].signatureFields;
@@ -71,6 +77,14 @@ const ReportViewPage = () => {
     window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, "_self");
   };
 
+  const handleDelete = async () => {
+    await api.deleteReport(report.id);
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+    queryClient.removeQueries({ queryKey: ["report", report.id] });
+    toast.success(`${report.form_no} deleted`);
+    navigate("/reports", { replace: true });
+  };
+
   const actions = [
     { label: "Edit", icon: Pencil, onClick: () => navigate(`/reports/${report.id}/edit`) },
     { label: "PDF", icon: Printer, onClick: handlePrint, primary: true },
@@ -81,6 +95,12 @@ const ReportViewPage = () => {
   return (
     <div className="pb-24">
       <Report data={report.data} formNo={report.form_no} signatures={signatures} />
+
+      {employee.role === "admin" && (
+        <div className="print:hidden flex justify-center pt-4">
+          <DeleteReportButton description={`${report.form_no}${report.owner_name ? ` by ${report.owner_name}` : ""}`} onDelete={handleDelete} />
+        </div>
+      )}
 
       {/* Bottom action bar */}
       <nav className="fixed bottom-0 inset-x-0 z-40 print:hidden border-t bg-background/95 backdrop-blur pb-[env(safe-area-inset-bottom)]">

@@ -49,14 +49,21 @@ interface FieldProps {
   small?: boolean;
 }
 
-export const TextField = ({ name, label, placeholder, small, type = "text" }: FieldProps & { type?: string }) => {
+export const TextField = ({
+  name,
+  label,
+  placeholder,
+  small,
+  type = "text",
+  readOnly,
+}: FieldProps & { type?: string; readOnly?: boolean }) => {
   const { register } = useFormContext();
   return (
     <div className={small ? "space-y-1" : "space-y-2"}>
       <Label htmlFor={name} className={small ? "text-xs" : undefined}>
         {label}
       </Label>
-      <Input id={name} type={type} placeholder={placeholder} {...register(name)} />
+      <Input id={name} type={type} placeholder={placeholder} readOnly={readOnly} className={readOnly ? "bg-muted" : undefined} {...register(name)} />
     </div>
   );
 };

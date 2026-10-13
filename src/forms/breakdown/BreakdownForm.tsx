@@ -98,7 +98,7 @@ const BreakdownForm = () => (
     <Section title="Service Person">
       <AreaField name="servicePersonRemarks" label="Remarks from Service Person" />
       <Group cols={2}>
-        <TextField name="servicePersonName" label="Name" />
+        <TextField name="servicePersonName" label="Name" readOnly />
         <DateField name="servicePersonDate" label="Date" />
       </Group>
       <SignatureField name="servicePersonSignature" label="Signature" />
