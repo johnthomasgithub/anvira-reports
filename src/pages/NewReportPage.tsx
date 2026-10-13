@@ -5,11 +5,17 @@ import { toast } from "sonner";
 
 import ReportFormEditor from "@/components/form/ReportFormEditor";
 import { FORMS, isFormType } from "@/forms/registry";
-import { createReport, type FormData } from "@/lib/reports";
+import { useApi, useSession } from "@/lib/auth";
+import type { FormData } from "@/lib/reports";
 import { usePageTitle } from "@/components/shell/navigation";
 import NotFound from "./NotFound";
 
-const draftKeyFor = (type: string) => `anvira-draft-${type}`;
+// One draft per employee, so another person on a shared phone never sees it.
+const draftKeyFor = (type: string, employeeId: string) => `anvira-draft-${employeeId}-${type}`;
+
+/** The technician name is filled from the login and cannot be changed. */
+const withTechnician = (type: string, values: FormData, name: string): FormData =>
+  type === "pm" ? { ...values, technicianName: name } : type === "breakdown" ? { ...values, servicePersonName: name } : values;
 
 function loadDraft(key: string): FormData {
   try {
@@ -23,16 +29,18 @@ const NewReportPage = () => {
   const { type } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const api = useApi();
+  const { employee } = useSession();
   const [formKey, setFormKey] = useState(0);
   usePageTitle(isFormType(type) ? FORMS[type].shortTitle : "New Report");
 
   if (!isFormType(type)) return <NotFound />;
 
   const def = FORMS[type];
-  const draftKey = draftKeyFor(type);
+  const draftKey = draftKeyFor(type, employee.id);
 
   const handleSubmit = async (values: FormData) => {
-    const report = await createReport(type, values, def.summary(values), def.signatureFields);
+    const report = await api.createReport(type, values, def.summary(values));
     localStorage.removeItem(draftKey);
     queryClient.invalidateQueries({ queryKey: ["reports"] });
     toast.success(`Saved as ${report.form_no}`);
@@ -50,7 +58,7 @@ const NewReportPage = () => {
     <ReportFormEditor
       key={`${type}-${formKey}`}
       def={def}
-      initialValues={loadDraft(draftKey)}
+      initialValues={withTechnician(type, loadDraft(draftKey), employee.name)}
       subtitle="Fill in the details below. The report number is given automatically when you save."
       submitLabel="Save Report"
       onSubmit={handleSubmit}

@@ -5,7 +5,8 @@ import { toast } from "sonner";
 
 import ReportFormEditor from "@/components/form/ReportFormEditor";
 import { FORMS } from "@/forms/registry";
-import { getReport, updateReport, type FormData } from "@/lib/reports";
+import { useApi } from "@/lib/auth";
+import type { FormData } from "@/lib/reports";
 import { usePageTitle } from "@/components/shell/navigation";
 
 const EditReportPage = () => {
@@ -13,7 +14,8 @@ const EditReportPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
-  const { data: report, isLoading, error } = useQuery({ queryKey: ["report", id], queryFn: () => getReport(id) });
+  const api = useApi();
+  const { data: report, isLoading, error } = useQuery({ queryKey: ["report", id], queryFn: () => api.getReport(id) });
   usePageTitle(report ? `Edit ${report.form_no}` : "Edit Report");
 
   if (isLoading) {
@@ -30,7 +32,7 @@ const EditReportPage = () => {
   const def = FORMS[report.form_type];
 
   const handleSubmit = async (values: FormData) => {
-    await updateReport(report.id, values, def.summary(values), def.signatureFields);
+    await api.updateReport(report.id, values, def.summary(values));
     queryClient.invalidateQueries({ queryKey: ["reports"] });
     queryClient.invalidateQueries({ queryKey: ["report", report.id] });
     toast.success(`${report.form_no} updated`);

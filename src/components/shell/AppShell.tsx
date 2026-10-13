@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigationType } from "react-router-dom";
-import { ChevronLeft, FilePlus2, FolderOpen } from "lucide-react";
+import { ChevronLeft, FilePlus2, FolderOpen, LogOut, ShieldCheck, UserRound } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { isCloudEnabled } from "@/lib/supabase";
+import { useAuth, useSession } from "@/lib/auth";
 import BrandLogo from "./BrandLogo";
 import { TitleContext, isTabRoute, useGoBack } from "./navigation";
 
@@ -46,6 +47,9 @@ const desktopNavClass = ({ isActive }: { isActive: boolean }) =>
 const AppShell = ({ children }: { children: ReactNode }) => {
   const location = useLocation();
   const goBack = useGoBack();
+  const { signOut } = useAuth();
+  const { employee } = useSession();
+  const isAdmin = employee.role === "admin";
   const [title, setTitle] = useState("Anvira Reports");
   useScrollRestoration();
 
@@ -86,6 +90,24 @@ const AppShell = ({ children }: { children: ReactNode }) => {
               <FolderOpen className="h-4 w-4" /> Saved
             </NavLink>
           </nav>
+          {/* Who is logged in */}
+          <div className="ml-auto md:ml-2 flex items-center gap-1 pl-1">
+            <div className="hidden sm:flex flex-col items-end leading-tight text-xs">
+              <span className="max-w-[10rem] truncate font-medium">{employee.name}</span>
+              <span className="text-white/70">{isAdmin ? "Admin" : "Technician"}</span>
+            </div>
+            <span className="sm:hidden" aria-label={employee.name} title={employee.name}>
+              {isAdmin ? <ShieldCheck className="h-5 w-5 text-emerald-300" /> : <UserRound className="h-5 w-5" />}
+            </span>
+            <button
+              type="button"
+              onClick={() => signOut()}
+              aria-label="Log out"
+              className="flex h-10 w-10 items-center justify-center rounded-full active:bg-white/20 hover:bg-white/10 transition-colors"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+          </div>
         </div>
         <div className="h-1 bg-brand-green" />
       </header>
