@@ -15,7 +15,7 @@ const draftKeyFor = (type: string, employeeId: string) => `anvira-draft-${employ
 
 /** The technician name is filled from the login and cannot be changed. */
 const withTechnician = (type: string, values: FormData, name: string): FormData =>
-  type === "pm" ? { ...values, technicianName: name } : type === "breakdown" ? { ...values, servicePersonName: name } : values;
+  type === "pm" ? { ...values, technicianName: name } : type === "breakdown" ? { ...values, servicePersonName: name } : type === "commissioning" ? { ...values, engineerName: name } : values;
 
 function loadDraft(key: string): FormData {
   try {

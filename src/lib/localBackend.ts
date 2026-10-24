@@ -54,6 +54,7 @@ function sessionEmployee(token: string): Employee {
 const withOwnerName = (type: FormType, data: FormData, name: string): FormData => {
   if (type === "pm") return { ...data, technicianName: name };
   if (type === "breakdown") return { ...data, servicePersonName: name };
+  if (type === "commissioning") return { ...data, engineerName: name };
   return data;
 };
 

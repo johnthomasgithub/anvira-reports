@@ -50,6 +50,13 @@ describe("PIN login and roles (demo backend, same rules as schema.sql)", () => {
     expect(edited.owner_name).toBe("BRIJESH KUMAR");
   });
 
+  it("forces the commissioning engineer name to the owner", () => {
+    const t = b.login("1004");
+    if (!t.ok) throw new Error("login failed");
+    const r = b.createReport({ ...args(t.token), p_type: "commissioning", p_data: { engineerName: "someone else" } });
+    expect(r.data.engineerName).toBe("BRIJESH KUMAR");
+  });
+
   it("only an admin can delete", () => {
     const t = b.login("1004");
     const admin = b.login("1099");
