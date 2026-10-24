@@ -281,6 +281,8 @@ const CommissioningReport = ({ data, formNo, signatures }: ReportProps) => {
           </tr>
           <tr>
             <td colSpan={2}>
+              Name: {s("engineerName")}
+              <br />
               Signature:
               <Sig src={signatures.engineerSignature} />
             </td>
