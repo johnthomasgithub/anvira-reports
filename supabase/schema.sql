@@ -370,6 +370,7 @@ as $$
   select case p_type
     when 'pm'        then jsonb_set(coalesce(p_data, '{}'::jsonb), '{technicianName}', to_jsonb(p_name))
     when 'breakdown' then jsonb_set(coalesce(p_data, '{}'::jsonb), '{servicePersonName}', to_jsonb(p_name))
+    when 'commissioning' then jsonb_set(coalesce(p_data, '{}'::jsonb), '{engineerName}', to_jsonb(p_name))
     else coalesce(p_data, '{}'::jsonb)
   end;
 $$;
